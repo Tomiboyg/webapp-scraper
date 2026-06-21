@@ -58,10 +58,18 @@ async function loadProfile() {
     .from('profiles')
     .select('*')
     .eq('id', currentUser.id)
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error('Profile load error:', error);
+    loginError.textContent = 'Error loading profile. Try refreshing.';
+    return;
+  }
+
+  if (!data) {
+    console.error('No profile row found for user:', currentUser.id);
+    loginError.textContent = 'No profile found. Contact the admin.';
+    await supabase.auth.signOut();
     return;
   }
 
@@ -121,13 +129,26 @@ loginForm.addEventListener('submit', async (e) => {
   const email = loginEmail.value.trim();
   const password = loginPassword.value;
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     loginError.textContent = error.message;
-  } else {
-    loginEmail.value = '';
-    loginPassword.value = '';
+    return;
   }
+
+  loginEmail.value = '';
+  loginPassword.value = '';
+
+  // Session is set; onAuthStateChange will call loadProfile.
+  // If loadProfile fails (e.g. no profile row), wait for signOut.
+  // Give it a moment, then check if we're still on auth screen.
+  setTimeout(() => {
+    if (!dashboardSection.hidden) return;
+    // Still on auth screen – try loading profile again
+    if (data?.user) {
+      currentUser = data.user;
+      loadProfile();
+    }
+  }, 500);
 });
 
 // Register
