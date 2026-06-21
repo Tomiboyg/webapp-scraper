@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillScraper</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav id="navbar">
+    <div class="nav-brand">SkillScraper</div>
+    <div class="nav-links" id="navLinks">
+      <span class="nav-user-email" id="navUserEmail"></span>
+      <button class="nav-btn admin-toggle" id="adminToggle" hidden>Admin Panel</button>
+      <button class="nav-btn logout-btn" id="logoutBtn" hidden>Logout</button>
+    </div>
+  </nav>
+
+  <main class="container">
+
+    <!-- Auth Section -->
+    <section id="authSection" class="section-card">
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login">Sign In</button>
+        <button class="auth-tab" data-tab="register">Register</button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="loginForm" class="auth-form active">
+        <h2>Welcome Back</h2>
+        <div class="form-group">
+          <label for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" placeholder="••••••••" required>
+        </div>
+        <div class="form-error" id="loginError"></div>
+        <button type="submit" class="btn btn-primary">Sign In</button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="registerForm" class="auth-form">
+        <h2>Create Account</h2>
+        <p class="form-hint">An invite code is required to register.</p>
+        <div class="form-group">
+          <label for="regEmail">Email</label>
+          <input type="email" id="regEmail" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label for="regPassword">Password</label>
+          <input type="password" id="regPassword" placeholder="••••••••" required minlength="6">
+        </div>
+        <div class="form-group">
+          <label for="regInvite">Invite Code</label>
+          <input type="text" id="regInvite" placeholder="e.g. INV-XXXXXX" required>
+        </div>
+        <div class="form-error" id="regError"></div>
+        <button type="submit" class="btn btn-primary">Register</button>
+      </form>
+    </section>
+
+    <!-- Dashboard Section -->
+    <section id="dashboardSection" class="section-card" hidden>
+      <div class="scraper-panel">
+        <h2>Extract Skills</h2>
+        <div class="scraper-row">
+          <input type="url" id="urlInput" class="url-input" placeholder="Paste a URL to scrape skills from..." required>
+          <button id="extractBtn" class="btn btn-accent">Extract Skills</button>
+        </div>
+        <div class="scraper-status" id="scraperStatus" hidden>
+          <div class="spinner"></div>
+          <span id="scraperStatusText">Analyzing page...</span>
+        </div>
+      </div>
+
+      <div class="skills-header">
+        <h2>Your Skills</h2>
+        <div class="skills-controls">
+          <input type="text" id="searchInput" class="search-input" placeholder="Search skills...">
+          <select id="categoryFilter" class="category-filter">
+            <option value="all">All Categories</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="skills-empty" id="skillsEmpty">
+        <p>No skills extracted yet. Paste a URL above to get started.</p>
+      </div>
+
+      <div class="skills-grid" id="skillsGrid"></div>
+    </section>
+
+    <!-- Admin Section -->
+    <section id="adminSection" class="section-card" hidden>
+      <div class="admin-panel">
+        <h2>Admin Panel</h2>
+        <button id="generateCodeBtn" class="btn btn-primary">Generate Invite Code</button>
+      </div>
+
+      <div class="admin-codes">
+        <h3>Invite Codes</h3>
+        <div class="codes-empty" id="codesEmpty">
+          <p>No invite codes generated yet.</p>
+        </div>
+        <div class="codes-table-wrapper" id="codesTableWrapper" hidden>
+          <table class="codes-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Status</th>
+                <th>Used By</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="codesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
