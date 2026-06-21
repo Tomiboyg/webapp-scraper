@@ -149,7 +149,11 @@ registerForm.addEventListener('submit', async (e) => {
       body: { email, password, invite_code: inviteCode }
     });
 
-    if (error) throw error;
+    if (error) {
+      // Extract actual error message from the response body
+      const msg = error.context?.error || error.message || 'Registration failed.';
+      throw new Error(msg);
+    }
     if (data.error) {
       regError.textContent = data.error;
       return;
@@ -162,6 +166,7 @@ registerForm.addEventListener('submit', async (e) => {
     authTabs[0].click();
   } catch (err) {
     regError.textContent = err.message || 'Registration failed.';
+    console.error('Registration error:', err);
   }
 });
 
