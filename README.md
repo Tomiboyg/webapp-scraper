@@ -1,23 +1,21 @@
-# WEB-app Scraper by Majner 21.6.2026
-
-
-
 # SkillScraper — Complete Deployment Guide
 
 ## Project Structure
 
 ```
 skillscraper/
-├── index.html              # Frontend HTML (SPA)
-├── style.css               # Dark theme styles
-├── script.js               # App logic (Supabase client)
-├── supabase-schema.sql     # Run this in Supabase SQL Editor
+├── index.html                       # Frontend HTML (SPA)
+├── style.css                        # Dark theme styles
+├── script.js                        # App logic (Supabase client)
+├── supabase-schema.sql              # Run this in Supabase SQL Editor
 ├── supabase/
-│   ├── config.toml         # Supabase project config
+│   ├── config.toml                  # Supabase project config
 │   └── functions/
-│       └── scrape-and-extract/
-│           └── index.ts    # Edge Function (scraping + LLM)
-└── GUIDE.md                # This file
+│       ├── scrape-and-extract/
+│       │   └── index.ts             # Edge Function (scraping + LLM)
+│       └── register-with-invite/
+│           └── index.ts             # Edge Function (invite-only signup)
+└── GUIDE.md                         # This file
 ```
 
 ---
@@ -42,7 +40,7 @@ skillscraper/
 4. Paste into the SQL Editor and click **Run**.
 5. Verify all tables were created:
    - Go to **Table Editor** → you should see `profiles`, `invite_codes`, `learned_skills`.
-   - Go to **Database → Triggers** → you should see `tr_check_invite_code_before_signup` and `tr_handle_new_user`.
+   - RLS policies should be active (check under **Authentication → Policies**).
 
 ---
 
@@ -77,7 +75,11 @@ const SUPABASE_ANON_KEY = 'eyJ...';
 
 ---
 
-## Step 5: Deploy the Edge Function
+## Step 5: Deploy Edge Functions
+
+Two Edge Functions need to be deployed:
+- `register-with-invite` — handles invite-only signups
+- `scrape-and-extract` — scrapes URLs and extracts skills via LLM
 
 ### Option A: Deploy via Supabase CLI (recommended)
 
@@ -95,30 +97,31 @@ const SUPABASE_ANON_KEY = 'eyJ...';
    ```
    Your project ref is the subdomain in your Supabase URL (the `xxxxxxxxxxxx` part).
 
-3. Deploy the function:
+3. Deploy both functions:
    ```bash
+   supabase functions deploy register-with-invite
    supabase functions deploy scrape-and-extract
    ```
 
 ### Option B: Deploy via Supabase Dashboard
 
-1. Go to **Edge Functions** in your Supabase dashboard.
-2. Click **Create a new Function**.
-3. Name it `scrape-and-extract`.
-4. Copy the contents of `supabase/functions/scrape-and-extract/index.ts` and paste.
-5. Click **Deploy**.
+Deploy each function through the Dashboard:
+
+1. Go to **Edge Functions** → **Create a new Function**.
+2. For `register-with-invite`:
+   - Copy `supabase/functions/register-with-invite/index.ts` → paste → Deploy.
+3. For `scrape-and-extract`:
+   - Copy `supabase/functions/scrape-and-extract/index.ts` → paste → Deploy.
 
 ### Configure Secrets
-
-After deploying, set your Gemini API key:
 
 ```bash
 supabase secrets set GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-Or in the dashboard: **Edge Functions → Secrets**.
-
 > **Get a Gemini API key:** Go to [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) → Create API Key. It's free.
+
+The `register-with-invite` function uses the **service_role key** internally (automatic via `SUPABASE_SERVICE_ROLE_KEY` env var), so no extra secrets needed for it.
 
 ---
 
@@ -161,10 +164,10 @@ Or in the dashboard: **Edge Functions → Secrets**.
 3. Enter:
    - **Email:** `admin@example.com` (or your email)
    - **Password:** choose a strong password
-   - **Invite Code:** leave blank
+   - **Invite Code:** enter any value (e.g. `FIRST_USER`)
 4. Click **Register**.
 
-   > **Why this works:** Since no user has registered yet (cold start), the database trigger allows the first signup without an invite code and automatically assigns the `admin` role.
+   > **Why this works:** The `register-with-invite` Edge Function checks if the `profiles` table is empty. If it is (cold start), it creates the user as an `admin` regardless of the invite code provided.
 
 5. You should see a success toast. Go to **Sign In** and log in.
 6. Verify: Click **Admin Panel** in the nav. You should see the invite code generator.
@@ -203,19 +206,27 @@ Skills inserted into `learned_skills` table (RLS enforced)
 Frontend re-renders skills grid
 ```
 
-**Invite-only flow:**
+**Invite-only registration flow:**
 
 ```
-User registers with invite_code in metadata
-                       ↓
-BEFORE INSERT trigger on auth.users validates code
-                       ↓
-If invalid → transaction aborted with error
-                       ↓
-If valid → AFTER INSERT trigger:
-  1. Creates profile row (admin if first user)
-  2. Marks invite_code as 'used'
+User submits registration form
+              ↓
+Frontend calls register-with-invite Edge Function
+              ↓
+Function checks invite_codes table (valid + active?)
+              ↓
+If invalid → returns error to frontend
+              ↓
+If valid → creates user via Supabase Admin API
+              ↓
+Creates profile row (admin if first user / cold start)
+              ↓
+Marks invite_code as 'used'
+              ↓
+Returns success → user can now sign in
 ```
+
+> Note: Triggers on `auth.users` require elevated DB permissions that Supabase restricts. The Edge Function approach is more portable and works across all Supabase projects without issue.
 
 ---
 
@@ -223,12 +234,14 @@ If valid → AFTER INSERT trigger:
 
 | Problem | Solution |
 |---------|----------|
-| Registration fails with "invite code required" even as first user | Delete the `profiles` table rows in Table Editor and try again. If you already have a row, manually change its role to `admin` in Table Editor. |
-| Edge Function returns 401 | Make sure you're logged in when calling it. The function verifies the JWT. |
-| Edge Function returns 500 | Check the function logs in Supabase Dashboard → Edge Functions → scrape-and-extract → Logs. Common issue: missing `GEMINI_API_KEY` secret. |
-| CORS errors | The Edge Function includes CORS headers. If hosting frontend separately, ensure the URL is accessible. |
+| Registration fails with "user already registered" | That email is taken. Use a different email or delete the existing user in **Authentication → Users**. |
+| First user created as `user` instead of `admin` | Manually update in **Table Editor**: set `role = 'admin'` in the `profiles` table row. |
+| Edge Function returns 500 on register | Check logs: `supabase functions --project-ref <ref> logs register-with-invite`. Ensure `SUPABASE_SERVICE_ROLE_KEY` env var is present (automatic in Supabase managed functions). |
+| Edge Function returns 500 on scrape | Check logs. Common issue: missing `GEMINI_API_KEY` secret. |
+| CORS errors | The Edge Functions include CORS headers. If hosting frontend separately, ensure the URL is accessible. |
 | "Could not extract meaningful text" | Some sites are JS-rendered (React, Vue). Try a different URL. Static sites work best. |
 | Skills not showing in dashboard | Check RLS policies are applied. The user must be authenticated to read `learned_skills`. |
+| `register-with-invite` not found | You haven't deployed it yet. Run `supabase functions deploy register-with-invite`. |
 
 ---
 
@@ -245,34 +258,41 @@ If valid → AFTER INSERT trigger:
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Browser (Frontend)                 │
-│  index.html + style.css + script.js                  │
-│  ┌─────────────────────────────────────────────┐    │
-│  │  Supabase JS Client (anon key)               │    │
-│  │  - auth.signUp / signInWithPassword          │    │
-│  │  - functions.invoke('scrape-and-extract')    │    │
-│  │  - from('learned_skills').select/insert      │    │
-│  └─────────────────────────────────────────────┘    │
-└─────────────────────┬───────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    Browser (Frontend)                     │
+│   index.html + style.css + script.js                      │
+│   ┌──────────────────────────────────────────────┐       │
+│   │  Supabase JS Client (anon key)                │       │
+│   │  - functions.invoke('register-with-invite')   │       │
+│   │  - auth.signInWithPassword                    │       │
+│   │  - functions.invoke('scrape-and-extract')     │       │
+│   │  - from('learned_skills').select/delete       │       │
+│   │  - from('invite_codes').insert/select (admin) │       │
+│   └──────────────────────────────────────────────┘       │
+└─────────────────────┬────────────────────────────────────┘
                       │
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│                 Supabase Backend                      │
-│                                                       │
-│  ┌─────────────┐  ┌──────────────────────┐           │
-│  │  PostgreSQL  │  │  Edge Function        │           │
-│  │              │  │  scrape-and-extract    │           │
-│  │  profiles    │  │                       │           │
-│  │  invite_codes│  │  1. Fetch URL HTML    │───► Web  │
-│  │  learned_skills│ │  2. Strip tags       │           │
-│  │              │  │  3. Call Gemini API   │───► AI   │
-│  │  Triggers:   │  │  4. Insert skills DB  │           │
-│  │  ✓ Invite    │  └──────────────────────┘           │
-│  │    validation│                                      │
-│  │  ✓ Profile   │                                      │
-│  │    creation   │                                      │
-│  │  ✓ RLS       │                                      │
-│  └─────────────┘                                       │
-└─────────────────────────────────────────────────────┘
+        ┌─────────────┼────────────────────┐
+        ▼             ▼                     ▼
+┌──────────────┐ ┌──────────┐ ┌──────────────────────┐
+│  Edge Func:  │ │ Supabase │ │  Edge Func:           │
+│  register-   │ │ Auth     │ │  scrape-and-extract    │
+│  with-invite │ │          │ │                       │
+│              │ │ signIn   │ │  1. Fetch URL HTML    │
+│  1. Validate │ │          │ │  2. Strip tags        │
+│     invite   │ │          │ │  3. Call Gemini API   │
+│  2. Admin    │ │          │ │  4. Insert skills DB  │
+│     create   │ │          │ └──────────┬────────────┘
+│     user     │ │          │            │
+│  3. Create   │ └──────────┘            │
+│     profile  │                         │
+│  4. Mark     │     ┌─────────────┐     │
+│     code     │     │ PostgreSQL  │     │
+│     used     │     │             │◄────┘
+└──────────────┘     │ profiles    │
+                     │ invite_codes│
+                     │ learned_    │
+                     │ skills      │
+                     │             │
+                     │ RLS: ✓      │
+                     └─────────────┘
 ```
