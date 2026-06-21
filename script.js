@@ -42,7 +42,33 @@ let userProfile = null;
 let skills = [];
 let toastTimeout = null;
 
+async function loadProfile() {
+  console.log('loadProfile called for user:', currentUser?.id);
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', currentUser.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Profile load error:', error);
+    loginError.textContent = 'Error loading profile: ' + error.message;
+    return;
+  }
+
+  if (!data) {
+    console.error('No profile row found for user:', currentUser.id);
+    loginError.textContent = 'No profile found. Contact the admin.';
+    return;
+  }
+
+  console.log('Profile loaded:', data);
+  userProfile = data;
+  showDashboard();
+}
+
 supabase.auth.onAuthStateChange((event, session) => {
+  console.log('Auth state change:', event, session?.user?.email);
   if (session) {
     currentUser = session.user;
     loadProfile();
@@ -52,30 +78,6 @@ supabase.auth.onAuthStateChange((event, session) => {
     showAuth();
   }
 });
-
-async function loadProfile() {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', currentUser.id)
-    .maybeSingle();
-
-  if (error) {
-    console.error('Profile load error:', error);
-    loginError.textContent = 'Error loading profile. Try refreshing.';
-    return;
-  }
-
-  if (!data) {
-    console.error('No profile row found for user:', currentUser.id);
-    loginError.textContent = 'No profile found. Contact the admin.';
-    await supabase.auth.signOut();
-    return;
-  }
-
-  userProfile = data;
-  showDashboard();
-}
 
 function showAuth() {
   authSection.hidden = false;
