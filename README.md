@@ -1,3 +1,6 @@
+# AI skill web-app scraper by Majner
+
+
 # SkillScraper — Complete Deployment Guide
 
 ## Project Structure
