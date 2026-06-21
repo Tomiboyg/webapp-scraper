@@ -145,25 +145,51 @@ registerForm.addEventListener('submit', async (e) => {
   }
 
   try {
-    const { data, error } = await supabase.functions.invoke('register-with-invite', {
-      body: { email, password, invite_code: inviteCode }
-    });
+    // Step 1: Validate invite code via RPC
+    const { data: check, error: checkError } = await supabase
+      .rpc('check_invite_code', { code_to_check: inviteCode });
 
-    if (error) {
-      // Extract actual error message from the response body
-      const msg = error.context?.error || error.message || 'Registration failed.';
-      throw new Error(msg);
-    }
-    if (data.error) {
-      regError.textContent = data.error;
+    if (checkError) throw checkError;
+    if (!check.valid) {
+      regError.textContent = check.reason || 'Invalid invite code.';
       return;
     }
 
-    showToast('Registration successful! You can now sign in.', 'success');
+    // Step 2: Create auth user
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (signUpError) {
+      regError.textContent = signUpError.message;
+      return;
+    }
+
+    if (!signUpData.user) {
+      regError.textContent = 'Signup failed. Please try again.';
+      return;
+    }
+
+    // Step 3: Finalize registration (create profile, mark code used)
+    const { data: finalData, error: finalError } = await supabase
+      .rpc('finalize_registration', { invite_code_used: inviteCode });
+
+    if (finalError) throw finalError;
+    if (!finalData.success) {
+      regError.textContent = finalData.error || 'Failed to complete registration.';
+      return;
+    }
+
+    const role = finalData.role;
+    showToast(`Registration successful! You are signed in as ${role}.`, 'success');
     regEmail.value = '';
     regPassword.value = '';
     regInvite.value = '';
-    authTabs[0].click();
+
+    // Reload profile to show dashboard
+    currentUser = signUpData.user;
+    await loadProfile();
   } catch (err) {
     regError.textContent = err.message || 'Registration failed.';
     console.error('Registration error:', err);
